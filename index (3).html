@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<!--
+SPARSH - One Engine. Five Doors.
+
+REQUIRES HTTPS (or localhost): camera, microphone (SpeechRecognition) and service workers only work on secure origins.
+Vibration works on Android Chrome/Edge/Firefox only (iOS Safari has no navigator.vibrate - the app shows a visual buzz dot instead).
+SpeechRecognition works in Chrome/Edge/Safari; not in Firefox (typed fallback is shown).
+
+DEPLOY
+- GitHub Pages: create a repo, upload this file as index.html, Settings > Pages > deploy from main branch. Open https://USER.github.io/REPO/
+- Netlify: drag and drop the folder containing index.html onto app.netlify.com/drop
+- Vercel: `npx vercel` in the folder (framework: Other), or import the repo at vercel.com/new
+
+OFFLINE (optional): save the text below as sw.js next to index.html. The app registers it automatically.
+  const C='sparsh-v1';
+  self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add('./')));self.skipWaiting()});
+  self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).then(r=>{const k=r.clone();caches.open(C).then(c=>c.put(e.request,k)).catch(()=>{});return r}).catch(()=>caches.match(e.request)))});
+Tesseract language data and the COCO-SSD model are cached after the first successful use.
+
+GEMINI: get a free key at aistudio.google.com/apikey and paste it in Settings. The key stays in this browser (localStorage).
+The app tries gemini-2.0-flash, gemini-1.5-flash, then gemini-pro; any failure falls back to local logic.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1A237E">
+<title>Sparsh</title>
+<link rel="manifest" href='data:application/manifest+json,{"name":"Sparsh","short_name":"Sparsh","start_url":".","display":"standalone","background_color":"#F5F5F5","theme_color":"#1A237E","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Crect width=%27100%27 height=%27100%27 fill=%27%231A237E%27/%3E%3Ccircle cx=%2730%27 cy=%2750%27 r=%278%27 fill=%27%23FF6D00%27/%3E%3Crect x=%2748%27 y=%2742%27 width=%2724%27 height=%2716%27 rx=%278%27 fill=%27%23FF6D00%27/%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml"}]}'>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--p:#1A237E;--a:#FF6D00;--bg:#F5F5F5;--w:#fff;--t:#111827;--ok:#1B5E20;--bad:#B71C1C}
+*{box-sizing:border-box}
+body{margin:0;font:18px/1.5 'Open Sans',system-ui,sans-serif;background:var(--bg);color:var(--t);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2,h3{font-family:Poppins,system-ui,sans-serif;margin:0;color:var(--p)}
+.scr{display:none;max-width:640px;margin:0 auto;padding:16px}
+.scr.on{display:block;animation:in .25s ease}
+@keyframes in{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.scr.on{animation:none}}
+button,.btn,select,input,textarea{font:inherit}
+button,.btn{min-height:48px;min-width:48px;border:0;border-radius:12px;padding:10px 18px;background:var(--p);color:#fff;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.18)}
+button.a,.btn.a{background:var(--a);color:var(--p)}
+button.g{background:var(--w);color:var(--p);border:2px solid var(--p)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:4px solid var(--a);outline-offset:2px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:12px}.top h2{flex:1;font-size:1.3rem}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.card{background:var(--w);border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.12);margin:12px 0}
+.home-h{display:flex;justify-content:space-between;align-items:flex-start}
+.home-h h1{font-size:2.6rem;letter-spacing:.06em}
+.tag{color:#374151;margin:0 0 16px}
+.modes{display:grid;gap:12px}
+.mode{display:block;width:100%;text-align:left;padding:18px;background:var(--p);color:#fff;min-height:88px}
+.mode b{font:700 1.4rem Poppins,sans-serif;display:block}.mode span{opacity:.92;font-size:.95rem}
+.mode:nth-child(even){background:var(--a);color:var(--p)}
+video,canvas.view{width:100%;border-radius:12px;background:#000;max-height:50vh;object-fit:cover}
+.stack{position:relative}.stack canvas.ov{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.morse{font:700 1.8rem monospace;letter-spacing:.15em;word-break:break-all;color:var(--p)}
+.big{font:600 1.6rem/1.4 Poppins,sans-serif}
+.huge{font:700 6rem/1 Poppins,sans-serif;color:var(--p);text-align:center}
+.st{padding:14px;border-radius:12px;font:700 1.4rem Poppins,sans-serif;text-align:center;background:var(--ok);color:#fff}
+.st.w{background:var(--a);color:var(--p)}.st.s{background:var(--bad)}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input[type=text],input[type=password],select,textarea{width:100%;min-height:48px;padding:10px;border:2px solid var(--p);border-radius:12px;background:#fff}
+.pad{min-height:120px;display:flex;align-items:center;justify-content:center;border:3px dashed var(--p);border-radius:12px;background:#E8EAF6;font-weight:600;user-select:none;touch-action:manipulation}
+.pgs{height:14px;background:#C5CAE9;border-radius:9px;overflow:hidden}.pgs i{display:block;height:100%;background:var(--a);width:0;transition:width .3s}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.log{max-height:220px;overflow:auto;font-size:.95rem}.log p{margin:4px 0;padding:6px 8px;border-radius:8px;background:#EEF}.log small{color:#4B5563}
+.me{background:#FFF3E0!important}
+#buzz{position:fixed;right:12px;top:calc(12px + env(safe-area-inset-top));width:22px;height:22px;border-radius:50%;background:#9CA3AF;border:2px solid #fff;z-index:9}
+#buzz.on{background:var(--a);transform:scale(1.6)}
+.msg{font-weight:700;min-height:1.6em}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.sr{position:absolute;left:-9999px}
+.hid{display:none!important}
+#dbt.scr.on{position:fixed;inset:0;max-width:none;margin:0;padding:20px;background:var(--p);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:5;user-select:none;-webkit-user-select:none}
+#dbt h2,#dbt .big{color:#fff;pointer-events:none}
+#dbz{position:absolute;inset:0;touch-action:none;-webkit-tap-highlight-color:transparent}
+#dbz:focus-visible{outline:8px solid var(--a);outline-offset:-8px}
+#dbx{position:absolute;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:6}
+#setup{position:fixed;inset:0;z-index:20;background:var(--p);color:#fff;padding:20px;overflow:auto;display:flex;flex-direction:column;justify-content:center;gap:10px}
+#setup h1{color:#fff;font-size:2rem}#setup ul{margin:0;padding-left:22px}
+#dbl{list-style:none;padding:0;margin:8px 0;max-width:520px;text-align:left;pointer-events:none;font-size:.95rem}
+#dbl li{padding:6px 10px;margin:3px 0;border-radius:10px;border:2px solid rgba(255,255,255,.35)}
+#dbl li.act{background:var(--a);color:var(--p);border-color:var(--a);font-weight:700}
+#dbc,#dba{pointer-events:none;margin:6px 0}
+#dbt .pgs{width:80%;margin:18px 0;pointer-events:none}
+#dbt .morse{color:var(--a);pointer-events:none}
+.half{border:3px solid var(--p);border-radius:12px;padding:12px;margin:10px 0}
+</style>
+</head>
+<body>
+<div id="buzz" title="Vibration indicator" aria-hidden="true"></div>
+<div id="live" class="sr" role="status" aria-live="polite"></div>
+
+<div id="setup" class="hid" role="dialog" aria-modal="true" aria-labelledby="sth">
+  <h1 id="sth">Welcome to Sparsh</h1>
+  <p>Sparsh needs your permission for:</p>
+  <ul><li>Camera: read text, spot obstacles, name objects.</li><li>Microphone: hear people who are speaking.</li><li>Vibration and speech need no permission. They are tested now.</li></ul>
+  <p>Press the big button, then choose Allow on each question that appears.</p>
+  <ul id="sres" aria-live="polite"></ul>
+  <button id="sbtn" class="a" style="min-height:32vh;font-size:1.6rem">Allow camera and microphone</button>
+</div>
+
+<!-- HOME -->
+<main id="home" class="scr on">
+  <div class="home-h"><div><h1>SPARSH</h1><p class="tag">One Engine. Five Doors.</p></div>
+  <button class="g" data-go="settings" aria-label="Settings">&#9881;</button></div>
+  <nav class="modes" aria-label="Modes">
+    <button class="mode" data-go="read" aria-label="Sparsh Read: camera to Morse vibration"><b>Read</b><span>Camera text, felt as Morse (deaf-blind)</span></button>
+    <button class="mode" data-go="learn" aria-label="Sparsh Learn: teach yourself Morse"><b>Learn</b><span>Teach yourself Morse by touch</span></button>
+    <button class="mode" data-go="talk" aria-label="Sparsh Talk: conversation for deaf users"><b>Talk</b><span>Speech to text and back (deaf)</span></button>
+    <button class="mode" data-go="walk" aria-label="Sparsh Walk: obstacle detection"><b>Walk</b><span>Obstacle alerts by vibration (blind)</span></button>
+    <button class="mode" data-go="seekh" aria-label="Sparsh Seekh: stories about things around you"><b>Seekh</b><span>A small story about anything</span></button>
+    <button class="mode" data-go="dbt" aria-label="Sparsh Touch: two-way conversation for deaf-blind users"><b>Touch</b><span>Type Morse, speak it, feel replies (deaf-blind)</span></button>
+  </nav>
+  <div class="row"><button id="inst" class="a hid">Add to Home Screen</button></div>
+</main>
+
+<!-- TOUCH (deaf-blind, whole screen is the button) -->
+<section id="dbt" class="scr" aria-label="Sparsh Touch">
+  <div id="dbz" role="button" tabindex="0" aria-label="Whole screen button. Tap for a Morse dot, hold for a dash. Hold 4 seconds to complete, 7 seconds to speak, 10 seconds to listen to a speaking person."></div>
+  <button id="dbx" class="g" aria-label="Exit to home">Exit</button>
+  <h2>Sparsh Touch</h2>
+  <p class="big" id="dbs">Morse input. Tap for dot, hold for dash.</p>
+  <p class="big" id="dbc" aria-hidden="true">&nbsp;</p>
+  <p class="big" id="dba" style="color:var(--a)">Last action: none yet</p>
+  <ul id="dbl">
+    <li id="dl0"><b>Tap</b> = dot. <b>Hold under 4 s</b> = dash. Pause = next letter. 8 dots = delete.</li>
+    <li id="dl1"><b>Hold 4 s</b> = complete: your message is felt back in Morse. With no message, the last reply is replayed.</li>
+    <li id="dl2"><b>Hold 7 s</b> = speak: AI guesses what you mean, turns it into a clear sentence, says it aloud, then clears it.</li>
+    <li id="dl3"><b>Hold 10 s</b> = listen: the other person has 5 s to start talking. 3 s after they stop (or a 5 s hold) their words are felt as Morse, then you type again.</li>
+  </ul>
+  <div class="pgs" aria-hidden="true"><i id="dbp"></i></div>
+  <p class="big" id="dbtxt" aria-live="polite"></p>
+  <div class="morse" id="dbm" aria-hidden="true"></div>
+  <p class="big" id="dbh" style="color:var(--a)"></p>
+</section>
+
+<!-- SETTINGS -->
+<section id="settings" class="scr" aria-label="Settings">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Settings</h2></div>
+  <label for="key">Gemini API key (free at aistudio.google.com/apikey)</label>
+  <input id="key" type="password" autocomplete="off" placeholder="Optional - leave empty for offline mode">
+  <label for="stt">Open Sparsh directly in</label>
+  <select id="stt"><option value="home">Home menu</option><option value="dbt">Touch (deaf-blind)</option><option value="walk">Walk (blind)</option><option value="talk">Talk (deaf)</option><option value="read">Read</option><option value="learn">Learn</option><option value="seekh">Seekh</option></select>
+  <label for="vs">Vibration strength</label>
+  <select id="vs"><option value="light">Light</option><option value="medium">Medium</option><option value="strong">Strong</option></select>
+  <label for="sr">Speech rate</label>
+  <select id="sr"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select>
+  <div class="row"><button id="save" class="a">Save</button><button id="testv" class="g">Test vibration</button><button id="perm" class="g">Allow permissions</button></div>
+  <p class="msg" id="setmsg"></p>
+</section>
+
+<!-- READ -->
+<section id="read" class="scr" aria-label="Sparsh Read">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Read</h2></div>
+  <video id="rv" playsinline muted aria-label="Camera preview"></video>
+  <div class="row"><button id="rcap" class="a">Capture</button>
+  <label class="btn g" for="rup" style="margin:0;display:inline-flex;align-items:center">Upload photo</label><input id="rup" type="file" accept="image/*" capture="environment" class="sr"></div>
+  <canvas id="rc" class="hid"></canvas>
+  <p class="msg" id="rstat" role="status"></p>
+  <div class="card"><h3>Found text</h3><p id="rraw">-</p><h3>Simple text</h3><p class="big" id="rsimple">-</p><h3>Morse</h3><div class="morse" id="rmorse">-</div>
+  <div class="row"><button id="rfeel" class="a">Feel again</button></div></div>
+  <div class="card"><h3>Response</h3>
+    <div class="row" id="rbank"></div>
+    <p>Or tap = dot, hold = dash. Pause to finish a letter.</p>
+    <div class="pad" id="pad" tabindex="0" role="button" aria-label="Morse input pad. Tap for dot, hold for dash.">TAP / HOLD HERE</div>
+    <p class="morse" id="rbuf" aria-live="polite">&nbsp;</p><p class="big" id="rtyped">&nbsp;</p>
+    <div class="row"><button id="rsay" class="a">Speak</button><button id="rclr" class="g">Clear</button></div></div>
+</section>
+
+<!-- LEARN -->
+<section id="learn" class="scr" aria-label="Sparsh Learn">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Learn</h2></div>
+  <div class="pgs" role="progressbar" aria-label="Letters learned" id="lpb"><i id="lpg"></i></div><p id="lsc">Score 0</p>
+  <div class="card"><div class="huge" id="ll">A</div><div class="morse" id="lm" style="text-align:center">.-</div></div>
+  <div class="row"><button id="lprev" class="g" aria-label="Previous letter">&larr;</button><button id="lfeel" class="a" style="flex:1">Feel the Pattern</button><button id="lnext" class="g" aria-label="Next letter">&rarr;</button></div>
+  <div class="row"><button id="lprac" style="flex:1">Practice</button><button id="lrep" class="g hid">Play again</button></div>
+  <p class="msg" id="lmsg" role="status"></p>
+  <div class="grid hid" id="lopt"></div>
+</section>
+
+<!-- TALK -->
+<section id="talk" class="scr" aria-label="Sparsh Talk">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Talk</h2></div>
+  <div class="half"><h3>Hearing person</h3>
+    <button id="mic" class="a" style="width:100%;min-height:72px;font-size:1.3rem">Start listening</button>
+    <div id="tfb" class="hid"><label for="tin1">Speech input is not supported here. Type what was said:</label><input id="tin1" type="text"></div>
+    <p class="big" id="live2" aria-live="polite" style="min-height:3em">...</p></div>
+  <div class="half"><h3>Deaf person</h3>
+    <div class="row" id="tbank"></div>
+    <label for="tin">Type a message</label><textarea id="tin" rows="2"></textarea>
+    <div class="row"><button id="tsend" class="a">Speak it</button></div></div>
+  <div class="row"><h3 style="flex:1">Conversation</h3><button id="tclr" class="g">Clear conversation</button></div>
+  <div class="log card" id="tlog" aria-live="polite"></div>
+</section>
+
+<!-- WALK -->
+<section id="walk" class="scr" aria-label="Sparsh Walk">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Walk</h2></div>
+  <div class="st" id="wst" role="alert" aria-live="assertive">Ready</div>
+  <div class="stack" style="margin:10px 0"><video id="wv" playsinline muted aria-label="Camera preview"></video><canvas id="wo" class="ov"></canvas></div>
+  <div class="row"><button id="wgo" class="a" style="flex:1">Start Walk Mode</button><button id="wstop" class="g hid" style="flex:1">Stop Walk Mode</button></div>
+  <label><input type="checkbox" id="wsay" checked style="width:24px;height:24px;vertical-align:middle"> Speak alerts (use bone-conduction headphones)</label>
+  <p id="wnote"></p>
+</section>
+
+<!-- SEEKH -->
+<section id="seekh" class="scr" aria-label="Sparsh Seekh">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Seekh</h2></div>
+  <p class="big">Point at anything</p>
+  <video id="sv" playsinline muted aria-label="Camera preview"></video><canvas id="sc" class="hid"></canvas>
+  <div class="row"><button id="scap" class="a">Capture</button>
+  <label class="btn g" for="sup" style="margin:0;display:inline-flex;align-items:center">Upload photo</label><input id="sup" type="file" accept="image/*" capture="environment" class="sr"></div>
+  <p class="msg" id="sstat" role="status"></p>
+  <div class="card"><h3 id="sobj">-</h3><p class="big" id="sstory">-</p>
+  <div class="row"><button id="sread" class="a">Read Aloud</button><button id="sfeel">Feel the Story</button></div></div>
+  <h3>Story history</h3><div class="log card" id="shist"></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4/dist/tf.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2/dist/coco-ssd.min.js" defer></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
+const store=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let S=Object.assign({key:'',vib:'medium',rate:'normal',start:'home'},load('sparsh.settings',{}));
+const say=t=>{$('live').textContent='';setTimeout(()=>$('live').textContent=t,50)};
+
+/* ---------- Morse + vibration ---------- */
+const MORSE={A:'.-',B:'-...',C:'-.-.',D:'-..',E:'.',F:'..-.',G:'--.',H:'....',I:'..',J:'.---',K:'-.-',L:'.-..',M:'--',N:'-.',O:'---',P:'.--.',Q:'--.-',R:'.-.',S:'...',T:'-',U:'..-',V:'...-',W:'.--',X:'-..-',Y:'-.--',Z:'--..',
+0:'-----',1:'.----',2:'..---',3:'...--',4:'....-',5:'.....',6:'-....',7:'--...',8:'---..',9:'----.','.':'.-.-.-',',':'--..--','?':'..--..','!':'-.-.--',"'":'.----.','/':'-..-.',':':'---...','-':'-....-'};
+const REV=Object.fromEntries(Object.entries(MORSE).map(([k,v])=>[v,k]));
+// Alternating [vibrate, pause, vibrate, pause...] - gaps are merged so the array stays valid for navigator.vibrate
+function textToVibration(text){
+  const p=[];
+  for(const ch of text.toUpperCase()){
+    if(ch===' '){ if(p.length) p[p.length-1]=700; continue; }
+    const m=MORSE[ch]; if(!m) continue;
+    for(const s of m){p.push(s==='.'?100:300);p.push(100);}
+    p[p.length-1]=300;
+  }
+  if(p.length) p.pop();
+  return p;
+}
+const toMorse=t=>t.toUpperCase().split(/\s+/).filter(Boolean).map(w=>[...w].map(c=>MORSE[c]).filter(Boolean).join(' ')).filter(Boolean).join('  /  ');
+function vib(p){
+  const k={light:.7,medium:1,strong:1.5}[S.vib]||1;
+  p=p.map((v,i)=>i%2===0?Math.round(v*k):v);
+  if(navigator.vibrate) navigator.vibrate(0), navigator.vibrate(p);
+  // visual indicator always runs (essential where vibration is unsupported)
+  const b=$('buzz');let t=0;
+  p.forEach((d,i)=>{if(i%2===0){setTimeout(()=>b.classList.add('on'),t);setTimeout(()=>b.classList.remove('on'),t+d)}t+=d});
+}
+function speak(t){
+  if(!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(t);u.rate={slow:.7,normal:1,fast:1.3}[S.rate]||1;speechSynthesis.speak(u);
+}
+
+/* ---------- Gemini + local fallbacks ---------- */
+async function gemini(prompt){
+  if(!S.key) return null;
+  for(const m of ['gemini-2.0-flash','gemini-1.5-flash','gemini-pro']){
+    try{
+      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(S.key)}`,
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
+      if(!r.ok) continue;
+      const j=await r.json();const t=j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if(t) return t.trim();
+    }catch(e){}
+  }
+  return null;
+}
+const FILL=new Set('a an the of to in on at for and or but so that this these those is are was were be been being very really just please kindly also which who whom with by from as it its into about there here then than such may might shall will would could should can do does did have has had'.split(' '));
+function simplifyLocal(t){
+  t=t.replace(/[^A-Za-z0-9.,!?'\s]/g,' ').replace(/\s+/g,' ').trim();
+  const sents=t.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let words=[];
+  for(const s of sents){
+    const w=s.split(' ').filter(x=>!FILL.has(x.toLowerCase().replace(/[^a-z]/g,'')));
+    words=words.concat(w.length?w:s.split(' '));
+    if(words.length>=15) break;
+  }
+  return words.slice(0,15).join(' ').replace(/[.,!?]+$/,'');
+}
+
+/* ---------- Camera ---------- */
+const streams={};
+async function startCam(id){
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    $(id).srcObject=s;await $(id).play();streams[id]=s;return true;
+  }catch(e){return false;}
+}
+function stopCam(id){if(streams[id]){streams[id].getTracks().forEach(t=>t.stop());delete streams[id];$(id).srcObject=null}}
+function frame(vid,cv){cv.width=vid.videoWidth;cv.height=vid.videoHeight;cv.getContext('2d').drawImage(vid,0,0);return cv}
+function fromFile(file,cv){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1280/Math.max(im.width,im.height));cv.width=im.width*s;cv.height=im.height*s;cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);URL.revokeObjectURL(im.src);res(cv)};im.onerror=rej;im.src=URL.createObjectURL(file)})}
+let cocoP=null;
+function model(){return cocoP||(cocoP=(async()=>{await tf.ready();return cocoSsd.load()})().catch(e=>{cocoP=null;throw e}))}
+
+/* ---------- Navigation ---------- */
+const NAMES={home:'Sparsh home',dbt:'Sparsh Touch',settings:'Settings',read:'Sparsh Read',learn:'Sparsh Learn',talk:'Sparsh Talk',walk:'Sparsh Walk',seekh:'Sparsh Seekh'};
+const enter={
+  read:async()=>{if(!await startCam('rv')){$('rstat').textContent='Camera unavailable. Use Upload photo instead.';$('rv').classList.add('hid')}else $('rv').classList.remove('hid')},
+  seekh:async()=>{if(!await startCam('sv')){$('sstat').textContent='Camera unavailable. Use Upload photo instead.';$('sv').classList.add('hid')}else $('sv').classList.remove('hid')},
+  learn:()=>showLetter(),talk:()=>renderTalk(),
+  dbt:()=>{touchReset();setTimeout(()=>$('dbz').focus(),50)}
+};
+function go(id){
+  stopCam('rv');stopCam('sv');stopWalk();stopMic();stopDbt();speechSynthesis?.cancel();navigator.vibrate&&navigator.vibrate(0);
+  document.querySelectorAll('.scr').forEach(s=>s.classList.toggle('on',s.id===id));
+  say(NAMES[id]);window.scrollTo(0,0);enter[id]&&enter[id]();
+  if(id==='settings'){$('key').value=S.key;$('vs').value=S.vib;$('sr').value=S.rate;$('stt').value=S.start}
+  if(id==='seekh')renderSeekh();
+  const h=document.querySelector('#'+id+' h1, #'+id+' h2');if(h){h.setAttribute('tabindex','-1');h.focus({preventScroll:true})}
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b)go(b.dataset.go)});
+
+/* ---------- Settings ---------- */
+$('save').onclick=()=>{S={key:$('key').value.trim(),vib:$('vs').value,rate:$('sr').value,start:$('stt').value};store('sparsh.settings',S);$('setmsg').textContent='Saved.';say('Settings saved');speak('Saved')};
+$('testv').onclick=()=>{S.vib=$('vs').value;vib(textToVibration('SOS'))};
+let dp;addEventListener('beforeinstallprompt',e=>{e.preventDefault();dp=e;$('inst').classList.remove('hid')});
+$('inst').onclick=async()=>{if(dp){dp.prompt();dp=null;$('inst').classList.add('hid')}};
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- READ ---------- */
+let lastVib=[];
+async function readCanvas(cv){
+  $('rstat').textContent='Reading text...';
+  try{
+    if(typeof Tesseract==='undefined') throw new Error('OCR library not loaded. Check your connection.');
+    const {data}=await Tesseract.recognize(cv,'eng');
+    const raw=data.text.replace(/\s+/g,' ').trim();
+    $('rraw').textContent=raw||'(nothing found)';
+    if(!raw){$('rstat').textContent='No text found. Move closer, add light, and try again.';speak('No text found');return}
+    $('rstat').textContent='Simplifying...';
+    let s=await gemini("Simplify this text for a deaf-blind user who reads via Morse code. Keep it under 15 words. Use simple, short words.\n\nText: "+raw);
+    if(s) s=s.replace(/[*_#\n]/g,' ').replace(/\s+/g,' ').trim(); else s=simplifyLocal(raw);
+    if(!s) s=raw.split(' ').slice(0,15).join(' ');
+    $('rsimple').textContent=s;$('rmorse').textContent=toMorse(s);
+    lastVib=textToVibration(s);vib(lastVib);
+    $('rstat').textContent=S.key?'Done.':'Done (offline simplifier).';say('Text: '+s);
+  }catch(e){$('rstat').textContent='Error: '+(e.message||e)}
+}
+$('rcap').onclick=()=>{const v=$('rv');if(!v.videoWidth){$('rstat').textContent='No camera image yet. Use Upload photo.';return}readCanvas(frame(v,$('rc')))};
+$('rup').onchange=async e=>{const f=e.target.files[0];if(f)readCanvas(await fromFile(f,$('rc')));e.target.value=''};
+$('rfeel').onclick=()=>lastVib.length&&vib(lastVib);
+let typed='',buf='',bt;
+['Yes','No','Help','Water','Toilet','Emergency'].forEach(p=>{const b=document.createElement('button');b.textContent=p;b.className=p==='Emergency'?'a':'g';b.onclick=()=>{speak(p==='Emergency'?'Emergency! I need help now!':p);say(p)};$('rbank').appendChild(b)});
+function commit(){if(buf){typed+=REV[buf]||'?';buf='';$('rbuf').innerHTML='&nbsp;';$('rtyped').textContent=typed}}
+let pd=0;
+function padDown(){if(!pd)pd=Date.now()}
+function padUp(){if(!pd)return;const d=Date.now()-pd;pd=0;const dash=d>300;buf+=dash?'-':'.';$('rbuf').textContent=buf;vib([dash?300:100]);clearTimeout(bt);bt=setTimeout(commit,1200)}
+const pad=$('pad');
+pad.onpointerdown=e=>{e.preventDefault();padDown()};pad.onpointerup=padUp;pad.onpointercancel=padUp;pad.oncontextmenu=e=>e.preventDefault();
+pad.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();padDown()}};
+pad.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();padUp()}};
+$('rsay').onclick=()=>{commit();if(typed)speak(typed)};
+$('rclr').onclick=()=>{typed='';buf='';$('rbuf').innerHTML='&nbsp;';$('rtyped').innerHTML='&nbsp;'};
+
+/* ---------- LEARN ---------- */
+const LET='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+let L=Object.assign({ok:{},bad:{},score:0,tries:0},load('sparsh.learn',{}));
+let li=0,target=null,practicing=false;
+function showLetter(){
+  $('ll').textContent=LET[li];$('lm').textContent=MORSE[LET[li]];
+  if(!practicing){$('ll').classList.remove('hid');$('lm').classList.remove('hid')}
+  const n=LET.filter(c=>L.ok[c]>0).length;$('lpg').style.width=(n/26*100)+'%';$('lpb').setAttribute('aria-valuenow',Math.round(n/26*100));
+  $('lsc').textContent=`Score ${L.score} of ${L.tries} tries. Letters learned: ${n} of 26`;
+}
+const feel=c=>vib(textToVibration(c));
+$('lfeel').onclick=()=>{endPractice();feel(LET[li])};
+$('lprev').onclick=()=>{endPractice();li=(li+25)%26;showLetter();say(LET[li]+' '+MORSE[LET[li]])};
+$('lnext').onclick=()=>{endPractice();li=(li+1)%26;showLetter();say(LET[li]+' '+MORSE[LET[li]])};
+function endPractice(){practicing=false;$('lopt').classList.add('hid');$('lrep').classList.add('hid');$('lmsg').textContent='';showLetter()}
+function pick(){ // adaptive: mistakes make a letter more likely
+  const w=LET.map(c=>1+3*(L.bad[c]||0)-(L.ok[c]?Math.min(.5,L.ok[c]*.1):0));
+  let r=Math.random()*w.reduce((a,b)=>a+b,0);
+  for(let i=0;i<26;i++){r-=w[i];if(r<=0)return LET[i]}return 'E';
+}
+function nextQ(){
+  target=pick();$('lmsg').textContent='Feel the pattern, then tap the letter.';$('lmsg').className='msg';
+  const opts=new Set([target]);while(opts.size<6)opts.add(LET[Math.floor(Math.random()*26)]);
+  const box=$('lopt');box.innerHTML='';
+  [...opts].sort(()=>Math.random()-.5).forEach(c=>{const b=document.createElement('button');b.textContent=c;b.setAttribute('aria-label','Letter '+c);b.className='g';b.style.fontSize='1.6rem';b.onclick=()=>answer(c);box.appendChild(b)});
+  box.classList.remove('hid');$('lrep').classList.remove('hid');setTimeout(()=>feel(target),300);
+}
+function answer(c){
+  L.tries++;
+  if(c===target){L.score++;L.ok[c]=(L.ok[c]||0)+1;vib([80,80,80]);$('lmsg').textContent='Correct!';$('lmsg').className='msg ok';say('Correct');store('sparsh.learn',L);li=LET.indexOf(c);$('ll').textContent=c;$('lm').textContent=MORSE[c];showLetter();setTimeout(()=>practicing&&nextQ(),1400)}
+  else{L.bad[target]=(L.bad[target]||0)+1;vib([700]);$('lmsg').textContent='Try again';$('lmsg').className='msg bad';say('Try again');store('sparsh.learn',L);showLetter();setTimeout(()=>practicing&&feel(target),900)}
+}
+$('lprac').onclick=()=>{practicing=true;$('ll').textContent='?';$('lm').textContent='';nextQ()};
+$('lrep').onclick=()=>target&&feel(target);
+
+/* ---------- TALK ---------- */
+let conv=load('sparsh.talk',[]),rec=null,listening=false;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function renderTalk(){
+  const l=$('tlog');l.innerHTML='';
+  conv.forEach(m=>{const p=document.createElement('p');p.className=m.who==='Deaf'?'me':'';const s=document.createElement('small');s.textContent=(m.who==='Deaf'?'Deaf person':'Hearing person')+' '+new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+': ';p.append(s,document.createTextNode(m.t));l.appendChild(p)});
+  l.scrollTop=l.scrollHeight;
+  if(!SR){$('mic').classList.add('hid');$('tfb').classList.remove('hid')}
+}
+function log(who,t){conv.push({who,t,ts:Date.now()});conv=conv.slice(-100);store('sparsh.talk',conv);renderTalk()}
+function stopMic(){listening=false;if(rec){try{rec.stop()}catch(e){}}const m=$('mic');if(m){m.textContent='Start listening'}}
+$('mic').onclick=()=>{
+  if(listening){stopMic();return}
+  rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang=navigator.language||'en-US';
+  rec.onresult=e=>{let fin='',int='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)fin+=r[0].transcript;else int+=r[0].transcript}
+    $('live2').textContent=(fin||int).trim()||'...';if(fin.trim())log('Hearing',fin.trim())};
+  rec.onerror=e=>{$('live2').textContent='Microphone problem: '+e.error+'. Allow microphone access and use HTTPS.';if(e.error==='not-allowed'||e.error==='service-not-allowed')stopMic()};
+  rec.onend=()=>{if(listening)try{rec.start()}catch(e){}};
+  listening=true;$('mic').textContent='Stop listening';try{rec.start()}catch(e){}
+};
+$('tin1').onkeydown=e=>{if(e.key==='Enter'&&e.target.value.trim()){log('Hearing',e.target.value.trim());$('live2').textContent=e.target.value;e.target.value=''}};
+function deafSay(t){t=t.trim();if(!t)return;log('Deaf',t);speak(t)}
+['Where is the station?','How much does this cost?','I need help','Thank you','Please repeat'].forEach(p=>{const b=document.createElement('button');b.textContent=p;b.className='g';b.onclick=()=>deafSay(p);$('tbank').appendChild(b)});
+$('tsend').onclick=()=>{deafSay($('tin').value);$('tin').value=''};
+$('tclr').onclick=()=>{conv=[];store('sparsh.talk',conv);renderTalk();$('live2').textContent='...'};
+
+/* ---------- WALK ---------- */
+let walking=false,fn=0,lastClear=0,lastObs=0,lastSpeech=0,simT=null;
+const VEH=['car','truck','bus','motorcycle','train'];
+function wstat(t,c){const s=$('wst');s.textContent=t;s.className='st '+(c||'')}
+async function startWalk(){
+  wstat('Starting camera...','w');
+  if(!await startCam('wv')){wstat('Camera unavailable','s');$('wnote').textContent='Allow camera access (HTTPS required).';return}
+  walking=true;$('wgo').classList.add('hid');$('wstop').classList.remove('hid');
+  let m=null;
+  try{wstat('Loading detector...','w');m=await model()}catch(e){}
+  if(!walking)return;
+  if(!m){ // simulation fallback
+    $('wnote').textContent='Detector could not load (offline?). Showing a simulated obstacle demo.';
+    simT=setInterval(()=>{const r=Math.random();if(r<.5)handle(0,null,0,'');else if(r<.75)handle(1,'person',.5,'ahead');else if(r<.9)handle(2,'car',.5,'left');else handle(3,'person',.5,'ahead')},3000);
+    wstat('Path Clear');return;
+  }
+  $('wnote').textContent='';wstat('Path Clear');
+  const loop=async()=>{
+    if(!walking)return;
+    if(++fn%3===0){
+      const v=$('wv');
+      if(v.videoWidth){
+        try{
+          const preds=(await m.detect(v)).filter(p=>p.score>.5);
+          const o=$('wo');o.width=v.videoWidth;o.height=v.videoHeight;const c=o.getContext('2d');c.lineWidth=4;c.font='bold 22px sans-serif';
+          let best=null,br=0;
+          preds.forEach(p=>{const [x,y,w,h]=p.bbox;c.strokeStyle='#FF6D00';c.strokeRect(x,y,w,h);c.fillStyle='#FF6D00';c.fillRect(x,y-26,c.measureText(p.class).width+12,26);c.fillStyle='#1A237E';c.fillText(p.class,x+6,y-6);
+            const r=w*h/(o.width*o.height);if(r>br){br=r;best={p,cx:(x+w/2)/o.width}}});
+          if(!best)handle(0,null,0,'');
+          else{const {p,cx}=best;const pos=cx<.33?'left':cx>.66?'right':'ahead';
+            const lvl=br>.45&&pos==='ahead'?3:br>.2?2:br>.04?1:0;handle(lvl,p.class,br,pos)}
+        }catch(e){}
+      }
+    }
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+function handle(lvl,label,r,pos){
+  const now=Date.now(),name=VEH.includes(label)?'vehicle':label;
+  if(lvl===0){wstat('Path Clear');if(now-lastClear>5000){lastClear=now;vib([40])}return}
+  if(lvl===3){wstat('STOP','s')}else wstat('Obstacle: '+label+' '+pos,'w');
+  if(now-lastObs>1500){lastObs=now;vib(lvl===1?[120]:lvl===2?[600]:[100,60,100,60,100])}
+  if($('wsay').checked&&now-lastSpeech>4000){lastSpeech=now;speak(lvl===3?'Stop. '+name+' very close':name+' '+(pos==='ahead'?'ahead':'on '+pos))}
+}
+function stopWalk(){walking=false;clearInterval(simT);stopCam('wv');const o=$('wo');if(o)o.getContext('2d').clearRect(0,0,o.width,o.height);$('wgo')?.classList.remove('hid');$('wstop')?.classList.add('hid');if($('wst'))wstat('Ready')}
+$('wgo').onclick=startWalk;$('wstop').onclick=()=>{stopWalk();speak('Walk mode stopped')};
+
+/* ---------- SEEKH ---------- */
+const STORIES={flower:'A little flower opens its face to the sun each morning, just to say hello. It reminds us that gentle things can brighten a whole day.',
+cat:'A cat curls up in the warmest spot and purrs a quiet song. Its soft heart says, you are home.',
+dog:'A dog wags its tail for the joy of seeing you. Every walk is the best walk it has ever had.',
+book:'A book holds a hundred old friends between its pages. Open it, and they all say welcome back.',
+cup:'A warm cup of tea holds a small piece of comfort. Sip slowly, and let the day be kind.',
+bottle:'A bottle of cool water is a little gift from the rain. Drink, and feel the day get lighter.',
+chair:'A good chair waits patiently for a tired friend. Sit down, breathe, and rest awhile.',
+clock:'The clock ticks softly, keeping time for all our happy moments. Each tick says, another good minute.',
+bowl:'A bowl holds a warm meal made with care. Every bite is a small hug.',
+banana:'A banana wears a sunny yellow coat. Peel it, and out comes a sweet smile.',
+apple:'An apple grew all summer in the sun and rain. Now it shares its sweetness with you.',
+bicycle:'A bicycle sings as its wheels go round. Wind, laughter, and a friendly bell along the way.',
+car:'A car carries families to birthdays and beaches. Every road leads to somebody happy to see you.',
+person:'A friendly person is a story waiting to be shared. One smile can start a lovely conversation.',
+'cell phone':'A little phone can bring a loved one\'s voice right into your hand. Distance melts away with a hello.',
+laptop:'A laptop opens a window to the whole wide world. Old songs and new friends are just a touch away.',
+default:'Every ordinary thing has a small happy story inside it. Today, this one is here just for you.'};
+let hist=load('sparsh.stories',[]),curStory='',curLabel='';
+function renderSeekh(){const h=$('shist');h.innerHTML='';if(!hist.length){h.textContent='Nothing yet. Capture something to begin.';return}
+  hist.slice().reverse().forEach(x=>{const p=document.createElement('p');const s=document.createElement('small');s.textContent=x.label+' - '+new Date(x.ts).toLocaleDateString()+': ';p.append(s,document.createTextNode(x.story));p.tabIndex=0;p.onclick=()=>show(x.label,x.story);h.appendChild(p)})}
+function show(l,s){curLabel=l;curStory=s;$('sobj').textContent=l;$('sstory').textContent=s}
+async function seekh(cv){
+  $('sstat').textContent='Looking...';let label='something special';
+  try{const m=await model();const ps=await m.detect(cv);ps.sort((a,b)=>b.bbox[2]*b.bbox[3]-a.bbox[2]*a.bbox[3]);if(ps[0])label=ps[0].class;else $('sstat').textContent='Nothing recognised - here is a story anyway.'}
+  catch(e){$('sstat').textContent='Detector unavailable (offline?) - using a general story.'}
+  let st=await gemini(`You are a warm, kind companion for an elderly person. Tell a 2-sentence story about this object: ${label}. Make it joyful and simple.`);
+  if(st)st=st.replace(/[*_#\n]/g,' ').replace(/\s+/g,' ').trim();else st=STORIES[label]||STORIES.default;
+  show(label,st);hist.push({label,story:st,ts:Date.now()});hist=hist.slice(-30);store('sparsh.stories',hist);renderSeekh();
+  if(!$('sstat').textContent.startsWith('Nothing')&&!$('sstat').textContent.startsWith('Detector'))$('sstat').textContent='Found: '+label;
+  say(label+'. '+st);
+}
+$('scap').onclick=()=>{const v=$('sv');if(!v.videoWidth){$('sstat').textContent='No camera image yet. Use Upload photo.';return}seekh(frame(v,$('sc')))};
+$('sup').onchange=async e=>{const f=e.target.files[0];if(f)seekh(await fromFile(f,$('sc')));e.target.value=''};
+$('sread').onclick=()=>curStory&&speak(curLabel+'. '+curStory);
+$('sfeel').onclick=()=>{if(!curStory)return;const kw=[...new Set(curStory.replace(/[^A-Za-z ]/g,'').split(' ').filter(w=>w.length>4))].sort((a,b)=>b.length-a.length).slice(0,2);vib(textToVibration([curLabel,...kw].join(' ')))};
+
+/* ---------- TOUCH (deaf-blind two-way conversation) ----------
+   Input: tap = dot, hold = dash, pause = letter, longer pause = space, 8 dots = delete last letter.
+   Hold 4 s = complete (feel message back), 7 s = speak it aloud, 10 s = listen to the other person.
+   Listening ends after 5 s of silence; what was heard is felt as Morse, then Morse input resumes. */
+const CUE={1:[200],2:[200,150,200],3:[200,150,200,150,200]},HINT={1:'Release now to COMPLETE (feel message back)',2:'Release now to SPEAK aloud',3:'Release now to LISTEN to the other person'};
+let spoke=false,lastSp=0,lisAt=0,cd=null;
+let dH=0,dT=null,dLv=0,dMode='input',tbuf='',ttyped='',lastHeard='',cT=null,sT=null,lisT=null,drec=null,heard='',base='',dTok=0;
+function dSt(t){$('dbs').textContent=t;say(t)}
+function act(t){$('dba').textContent='Last action: '+t+' ('+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+')'}
+function hl(n){for(let i=0;i<4;i++)$('dl'+i).classList.toggle('act',i===n)}
+function showTyped(){$('dbtxt').textContent=ttyped;$('dbm').textContent=tbuf}
+function addSpace(){if(ttyped&&!ttyped.endsWith(' ')){ttyped+=' ';vib([40,60,40]);showTyped()}}
+function flush(){
+  clearTimeout(cT);if(!tbuf)return;
+  if(/^\.{8,}$/.test(tbuf)){ttyped=ttyped.trimEnd().slice(0,-1);vib([40,60,40,60,40,60,40])} // 8 dots = error / delete
+  else if(REV[tbuf]){ttyped+=REV[tbuf];vib([40])} else vib([400]); // unknown pattern: long buzz
+  tbuf='';showTyped();
+}
+function sym(s){
+  clearTimeout(cT);clearTimeout(sT);tbuf+=s;vib([s==='.'?100:300]);showTyped();
+  cT=setTimeout(()=>{flush();sT=setTimeout(addSpace,2000)},1200);
+}
+function dDown(){
+  if(dH||dMode==='playing')return;dH=Date.now();dLv=0;
+  dT=setInterval(()=>{
+    const ls=dMode==='listen',s=(Date.now()-dH)/1000,l=ls?(s>=5?1:0):(s>=10?3:s>=7?2:s>=4?1:0);
+    $('dbp').style.width=Math.min(100,s/(ls?5:10)*100)+'%';$('dbc').textContent='Holding '+s.toFixed(1)+' s';hl(ls?(l?3:-1):(l>0?l:(s>.3?0:-1)));
+    if(l>dLv){dLv=l;vib(CUE[l]);dSt(ls?'Release now to STOP listening and convert to Morse':HINT[l])}
+  },100);
+}
+function dUp(){
+  if(!dH)return;const s=(Date.now()-dH)/1000,l=dLv;clearInterval(dT);dH=0;dLv=0;$('dbp').style.width='0';$('dbc').innerHTML='&nbsp;';hl(-1);
+  if(dMode==='playing')return;
+  if(dMode==='listen'){if(l>0){act('Hold '+s.toFixed(1)+' s: stopped listening, converting to Morse');endListen()}return} // any 4 s+ hold ends listening early
+  clearTimeout(sT);
+  if(l===0){const d=s>.3;act(d?'Hold '+s.toFixed(1)+' s: dash (-)':'Tap: dot (.)');sym(d?'-':'.');return}
+  flush();
+  if(l===1)complete();else if(l===2)speakMsg();else startListen();
+}
+function play(p,cue){
+  const tok=++dTok;dMode='playing';vib(p);
+  setTimeout(()=>{if(tok!==dTok)return;dMode='input';if(cue){vib([150,100,150]);dSt('Your turn. Type in Morse.')}},p.reduce((a,b)=>a+b,0)+800);
+}
+function complete(){
+  const t=ttyped.trim();
+  if(t){ttyped=t;showTyped();act('Hold 4 s: message complete, feeling it back: "'+t+'"');dSt('Message complete. Hold 7 seconds to speak it.');play(textToVibration(t))} // echo so they can check it
+  else if(lastHeard){act('Hold 4 s: replaying the last reply from the other person');dSt('Replaying last message');play(textToVibration(lastHeard))}
+  else{act('Hold 4 s: nothing to complete or replay yet');vib([60])}
+}
+const PHR={HELP:'Please help me.',WATER:'I need water, please.',TOILET:'I need to use the toilet, please.',FOOD:'I am hungry. I need food, please.',YES:'Yes.',NO:'No.',THANKS:'Thank you.',THANK:'Thank you.',SORRY:'I am sorry.',HELLO:'Hello.',HI:'Hello.',EMERGENCY:'This is an emergency! Please help me now!',DOCTOR:'I need a doctor, please.',PAIN:'I am in pain. Please help me.',HOME:'I want to go home.',REPEAT:'Please repeat that.',STOP:'Please stop.',WAIT:'Please wait.'};
+function localSentence(t){ // offline fallback: expand common words, add "I", capitalise, punctuate
+  const w=t.trim().toLowerCase().replace(/\s+/g,' ');
+  if(PHR[w.toUpperCase()])return PHR[w.toUpperCase()];
+  let x=w.replace(/[.!?]+$/,''),q=/^(where|what|how|when|who|why|can|could|do|does|is|are|will)\b/.test(x);
+  if(/^(need|want|feel|am|have|like|lost|cannot|cant)\b/.test(x))x='I '+x.replace(/^cant\b/,'cannot');
+  x=x.charAt(0).toUpperCase()+x.slice(1);
+  return x+(q?'?':'.')+(/^I (need|want)\b/.test(x)&&!/please/i.test(x)?' Please.':'');
+}
+async function clearSentence(t){
+  const g=await gemini('A deaf-blind person typed this message in Morse code, so it may have missing words, missing punctuation or small mistakes: "'+t+'"\nGuess what they mean and rewrite it as one clear, polite, natural spoken sentence (two short ones at most) that a hearing stranger will understand at once. Keep the same language. Reply with only the sentence, no quotes and no explanation.');
+  const c=g&&g.replace(/[*_#\n"]/g,' ').replace(/\s+/g,' ').trim();
+  return c||localSentence(t);
+}
+async function speakMsg(){
+  const t=ttyped.trim();if(!t){act('Hold 7 s: nothing typed, so nothing to speak');vib([60]);return}
+  const tok=++dTok;dMode='playing';vib([60]);dSt('Turning your Morse message into a clear sentence...');
+  const c=await clearSentence(t);
+  if(tok!==dTok)return;
+  dMode='input';speak(c);log('Deaf',c);$('dbh').textContent='Said: '+c;
+  act('Hold 7 s: you typed "'+t+'", said aloud as "'+c+'"');ttyped='';showTyped();vib([200]);
+  dSt('Spoken. Type more, or hold 10 seconds to listen.');
+}
+function startListen(){
+  if(!SR){act('Hold 10 s: listening not supported on this phone');dSt('Speech recognition is not supported on this phone.');vib([800]);return}
+  heard='';base='';spoke=false;lastSp=0;lisAt=Date.now();dMode='listen';$('dbh').textContent='';
+  drec=new SR();drec.continuous=true;drec.interimResults=true;drec.lang=navigator.language||'en-US';
+  drec.onresult=e=>{let t='';for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript+' ';heard=(base+' '+t).trim();$('dbh').textContent=heard;if(t.trim()){spoke=true;lastSp=Date.now();silence(3000)}};
+  drec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){vib([800]);dSt('Microphone blocked. Ask a helper to allow it.');endListen()}};
+  drec.onend=()=>{if(dMode==='listen'){base=heard;try{drec.start()}catch(x){}}};
+  try{drec.start()}catch(x){}
+  act('Hold 10 s: listening. You have 5 s to start speaking');vib([100,80,100]);dSt('Listening. Start speaking within 5 seconds. Hold 5 seconds to finish early.');silence(5000);
+  clearInterval(cd);cd=setInterval(()=>{if(dMode!=='listen'||dH)return;$('dbc').textContent=spoke?'Finishing after '+Math.max(0,Math.ceil(3-(Date.now()-lastSp)/1000))+' s of quiet':'Start speaking: '+Math.max(0,Math.ceil(5-(Date.now()-lisAt)/1000))+' s'},250);
+}
+function silence(ms){clearTimeout(lisT);lisT=setTimeout(()=>{if(dMode==='listen')act(spoke?'3 s after speech stopped: converting to Morse':'No speech within 5 s: listening stopped');endListen()},ms)} // 5 s to begin, then 3 s of quiet ends the turn
+function endListen(){
+  clearTimeout(lisT);clearInterval(cd);$('dbc').innerHTML='&nbsp;';if(dMode!=='listen')return;dMode='playing';
+  const r=drec;drec=null;let done=false;
+  const fin=()=>{if(done)return;done=true;processHeard(heard.trim())};
+  if(r){r.onend=fin;try{r.stop()}catch(x){}}
+  setTimeout(fin,1200);
+}
+async function processHeard(raw){
+  if(!raw){act('Nothing was heard');dMode='input';vib([600]);dSt('Nothing heard. Type in Morse, or hold 10 seconds to listen again.');return}
+  log('Hearing',raw);dMode='playing';
+  let s=raw;
+  if(raw.split(/\s+/).length>10)s=(await gemini("Simplify this spoken sentence for a deaf-blind user who reads via Morse code. Keep it under 15 words. Use simple, short words.\n\nText: "+raw))||simplifyLocal(raw);
+  s=s.replace(/[*_#\n]/g,' ').replace(/\s+/g,' ').trim();lastHeard=s;
+  act('Heard: "'+s+'", feeling it as Morse');$('dbh').textContent=s;$('dbm').textContent=toMorse(s);dSt('Feeling their message.');
+  play(textToVibration(s),true);
+}
+function stopDbt(){
+  clearInterval(dT);clearInterval(cd);clearTimeout(cT);clearTimeout(sT);clearTimeout(lisT);dH=0;dLv=0;dMode='input';dTok++;tbuf='';ttyped='';
+  if(drec){drec.onend=null;try{drec.stop()}catch(x){}drec=null}
+}
+function touchReset(){stopDbt();dSt('Morse input. Tap for dot, hold for dash.');$('dbtxt').textContent='';$('dbm').textContent='';$('dbh').textContent='';vib([200])}
+const dz=$('dbz');
+dz.addEventListener('pointerdown',e=>{e.preventDefault();try{dz.setPointerCapture(e.pointerId)}catch(x){}dDown()});
+dz.addEventListener('pointerup',dUp);dz.addEventListener('pointercancel',dUp);
+dz.addEventListener('contextmenu',e=>e.preventDefault());
+$('dbx').onclick=()=>go('home');
+// Button phones: the middle (Enter / OK / Select) key works exactly like touching the screen; Escape / Back exits
+addEventListener('keydown',e=>{
+  if(!$('dbt').classList.contains('on')||e.target.id==='dbx')return;
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!e.repeat)dDown()}
+  else if(e.key==='Escape'||e.key==='Backspace'||e.key==='SoftLeft'){e.preventDefault();go('home')}
+});
+addEventListener('keyup',e=>{
+  if(!$('dbt').classList.contains('on')||e.target.id==='dbx')return;
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();dUp()}
+});
+
+/* ---------- FIRST VISIT: ask for every permission, then open the chosen mode ---------- */
+let setupFromSettings=false,setupPhase=0;
+async function askPerms(){
+  const r={cam:false,mic:false},md=navigator.mediaDevices;
+  const tryGet=async c=>{try{const st=await md.getUserMedia(c);st.getTracks().forEach(t=>t.stop());return true}catch(e){return false}};
+  if(md){
+    if(await tryGet({video:{facingMode:{ideal:'environment'}},audio:true}))r.cam=r.mic=true;
+    else{r.cam=await tryGet({video:true});r.mic=await tryGet({audio:true})}
+  }
+  try{speechSynthesis.speak(new SpeechSynthesisUtterance(''))}catch(e){} // unlocks speech
+  vib([100,60,100]); // unlocks and tests vibration
+  return r;
+}
+function renderRes(r){
+  const bad='Blocked. Turn it on in the browser site settings.';
+  const rows=[['Camera',r.cam?'Allowed':bad],['Microphone',r.mic?'Allowed':bad],['Vibration',navigator.vibrate?'Works on this phone':'Not supported here. A flashing dot is shown instead.'],['Speech',('speechSynthesis' in window)&&SR?'Speaking and listening supported':'Limited support in this browser']];
+  if(!window.isSecureContext)rows.push(['Note','Camera and microphone need a secure (HTTPS) address.']);
+  const u=$('sres');u.innerHTML='';rows.forEach(([a,b])=>{const li=document.createElement('li');li.textContent=a+': '+b;u.appendChild(li)});
+  return r.cam&&r.mic;
+}
+function openSetup(fromSettings){
+  setupFromSettings=!!fromSettings;setupPhase=0;$('sres').innerHTML='';$('sbtn').textContent='Allow camera and microphone';
+  $('setup').classList.remove('hid');$('sbtn').focus();say('Welcome to Sparsh. Press the big button to allow camera and microphone.');
+}
+$('sbtn').onclick=async()=>{
+  if(setupPhase===0){
+    $('sbtn').disabled=true;$('sbtn').textContent='Waiting for your answers...';
+    const ok=renderRes(await askPerms());
+    $('sbtn').disabled=false;setupPhase=1;$('sbtn').textContent=ok?'Continue':'Continue anyway';$('sbtn').focus();
+    say(ok?'All permissions allowed. Press Continue.':'Some permissions are blocked. Press Continue anyway.');
+  }else{
+    store('sparsh.setup',true);$('setup').classList.add('hid');
+    if(!setupFromSettings)launch();
+  }
+};
+$('perm').onclick=()=>openSetup(true);
+async function needSetup(){
+  if(!load('sparsh.setup',false))return true;
+  if(!navigator.permissions)return false;
+  for(const n of ['camera','microphone']){try{if((await navigator.permissions.query({name:n})).state==='prompt')return true}catch(e){}}
+  return false;
+}
+// Open the mode chosen in Settings (or #hash, e.g. index.html#walk)
+function launch(){const h=location.hash.slice(1),m=NAMES[h]?h:S.start;if(m&&m!=='home'&&NAMES[m]&&m!=='settings')go(m)}
+needSetup().then(n=>n?openSetup(false):launch());
+</script>
+</body>
+</html>
