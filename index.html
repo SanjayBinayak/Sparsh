@@ -86,6 +86,11 @@ input[type=text],input[type=password],select,textarea{width:100%;min-height:48px
 #dbt .pgs{width:80%;margin:18px 0;pointer-events:none}
 #dbt .morse{color:var(--a);pointer-events:none}
 .half{border:3px solid var(--p);border-radius:12px;padding:12px;margin:10px 0}
+.note-b{display:block;width:100%;text-align:left;margin:0 0 16px;padding:14px 16px;background:var(--w);color:var(--t);border:3px solid var(--a);box-shadow:none;min-height:64px}
+.note-b b{display:block;font:700 1.05rem Poppins,sans-serif;color:var(--p)}.note-b span{font-size:.95rem;font-weight:400}
+.chg{border-left:6px solid var(--a);padding-left:12px;margin:18px 0}.chg h3{font-size:1.1rem;margin-bottom:4px}.chg p{margin:0}
+.was{color:#4B5563;font-size:.95rem}
+.half.now{background:#E8EAF6}
 </style>
 </head>
 <body>
@@ -105,6 +110,7 @@ input[type=text],input[type=password],select,textarea{width:100%;min-height:48px
 <main id="home" class="scr on">
   <div class="home-h"><div><h1>SPARSH</h1><p class="tag">One Engine. Five Doors.</p></div>
   <button class="g" data-go="settings" aria-label="Settings">&#9881;</button></div>
+  <button class="note-b" data-go="notice" aria-label="Read the plan update notice"><b>Plan update</b><span>Why our plan changed after talking to users. Read the notice.</span></button>
   <nav class="modes" aria-label="Modes">
     <button class="mode" data-go="read" aria-label="Sparsh Read: camera to Morse vibration"><b>Read</b><span>Camera text, felt as Morse (deaf-blind)</span></button>
     <button class="mode" data-go="learn" aria-label="Sparsh Learn: teach yourself Morse"><b>Learn</b><span>Teach yourself Morse by touch</span></button>
@@ -137,6 +143,39 @@ input[type=text],input[type=password],select,textarea{width:100%;min-height:48px
 </section>
 
 <!-- SETTINGS -->
+<!-- PLAN UPDATE NOTICE -->
+<section id="notice" class="scr" aria-label="Plan update notice">
+  <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Plan update</h2></div>
+  <p class="was">Updated 2 October 2026</p>
+  <p>The plan we first submitted was written in a hurry, because submissions were about to close. After that, we ran a short survey with people who would use Sparsh. One question stood out: <b>how will a deaf-blind person open the app or website in the first place?</b></p>
+  <p>A voice assistant cannot answer that, and a screen full of buttons cannot either. So we are changing the plan. This notice explains what changed, and what already works today.</p>
+
+  <div class="chg"><h3>1. A Morse assistant instead of a voice assistant</h3>
+    <p>Sparsh will start the way each user sets it up, and can stay ready all the time. The user talks to it in Morse by tapping a short or long code anywhere on the screen. No buttons to find.</p></div>
+
+  <div class="chg"><h3>2. Walking: the surroundings, as the user chooses</h3>
+    <p>While walking, Sparsh describes the surroundings through touch and settings the user picks. This includes obstacles and crossing a road.</p></div>
+
+  <div class="chg"><h3>3. Conversation: what the other person says</h3>
+    <p>When the user is talking with someone, Sparsh turns the speaker's words into Morse the user can feel.</p></div>
+
+  <div class="chg"><h3>4. Desktop: a Morse mouse</h3>
+    <p>A special Morse mouse and matching desktop software. The user enters a code they chose in advance, for example one that opens Chrome. To search, they enter another code. Sparsh then asks for the question, and the user enters it in Morse.</p></div>
+
+  <div class="chg"><h3>5. Button phones</h3>
+    <p>We plan to support basic button phones, such as Nokia, so Sparsh does not depend on a touchscreen smartphone.</p></div>
+
+  <div class="chg"><h3>6. Use Sparsh anytime, and the rest of the phone too</h3>
+    <p>Because of the Morse assistant, the user can reach Sparsh at any moment and use other features of the phone through it. For example, they can read and send WhatsApp messages. A deaf-blind person can do this without speaking, by entering Morse and feeling the replies. A deaf person can talk with anyone, anytime, with Sparsh turning speech into text and text into speech.</p></div>
+
+  <div class="half now">
+    <h3>What works today</h3>
+    <p>This prototype already has Sparsh Touch (the whole screen is one Morse button), Walk (obstacle alerts by vibration), Talk (speech to text and back), Read and Learn. The desktop Morse mouse, always-on start, richer surroundings description, using other phone features such as WhatsApp, and button phone support are planned, not built yet.</p>
+  </div>
+
+  <div class="row"><button class="a" data-go="home">Back to Sparsh</button></div>
+</section>
+
 <section id="settings" class="scr" aria-label="Settings">
   <div class="top"><button class="g" data-go="home" aria-label="Back">&larr;</button><h2>Settings</h2></div>
   <label for="key">Gemini API key (free at aistudio.google.com/apikey)</label>
@@ -302,7 +341,7 @@ let cocoP=null;
 function model(){return cocoP||(cocoP=(async()=>{await tf.ready();return cocoSsd.load()})().catch(e=>{cocoP=null;throw e}))}
 
 /* ---------- Navigation ---------- */
-const NAMES={home:'Sparsh home',dbt:'Sparsh Touch',settings:'Settings',read:'Sparsh Read',learn:'Sparsh Learn',talk:'Sparsh Talk',walk:'Sparsh Walk',seekh:'Sparsh Seekh'};
+const NAMES={home:'Sparsh home',dbt:'Sparsh Touch',settings:'Settings',notice:'Plan update notice',read:'Sparsh Read',learn:'Sparsh Learn',talk:'Sparsh Talk',walk:'Sparsh Walk',seekh:'Sparsh Seekh'};
 const enter={
   read:async()=>{if(!await startCam('rv')){$('rstat').textContent='Camera unavailable. Use Upload photo instead.';$('rv').classList.add('hid')}else $('rv').classList.remove('hid')},
   seekh:async()=>{if(!await startCam('sv')){$('sstat').textContent='Camera unavailable. Use Upload photo instead.';$('sv').classList.add('hid')}else $('sv').classList.remove('hid')},
